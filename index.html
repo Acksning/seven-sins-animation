@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>INTP · 傲慢与怠惰</title>
+  <link rel="stylesheet" href="style.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/",
+      "@dimforge/rapier3d-simd-compat": "https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-simd-compat@0.19.3/rapier.mjs"
+    }
+  }
+  </script>
+</head>
+<body>
+  <main class="scene">
+    <div class="core-layer" id="coreLayer">
+      <section class="radar-layer">
+        <canvas id="radarCanvas"></canvas>
+      </section>
+
+      <section class="hourglass-layer" id="hourglassLayer">
+        <canvas id="hourglass3d"></canvas>
+      </section>
+    </div>
+
+    <button type="button" class="flip-btn" id="flipBtn" aria-label="翻转沙漏">
+      <span class="flip-btn-icon" aria-hidden="true">↻</span>
+      <span class="flip-btn-text">翻转</span>
+    </button>
+
+    <footer class="quote">
+      <p>傲慢抬高怠惰的阈值</p>
+      <p>怠惰滋养傲慢的幻觉</p>
+    </footer>
+
+    <div class="boot-overlay" id="bootOverlay">
+      <p>唤醒物理引擎…</p>
+    </div>
+  </main>
+
+  <script type="module">
+    import { initHourglass, getState, flipHourglass, canFlip } from './hourglass3d.js';
+    window.Hourglass3D = { getState, flipHourglass, canFlip };
+
+    const flipBtn = document.getElementById('flipBtn');
+    flipBtn.addEventListener('click', () => {
+      if (canFlip()) {
+        flipBtn.disabled = true;
+        flipBtn.classList.add('is-spinning');
+        flipHourglass();
+      }
+    });
+
+    function syncFlipBtn() {
+      const busy = !canFlip();
+      flipBtn.disabled = busy;
+      if (!busy && !getState().flipping) {
+        flipBtn.classList.remove('is-spinning');
+      }
+    }
+    setInterval(syncFlipBtn, 120);
+    const overlay = document.getElementById('bootOverlay');
+    try {
+      await initHourglass(
+        document.getElementById('hourglass3d'),
+        document.getElementById('coreLayer'),
+      );
+      overlay.classList.add('hidden');
+      window.dispatchEvent(new Event('hourglass-ready'));
+    } catch (err) {
+      overlay.querySelector('p').textContent =
+        '沙漏加载失败，请联网后刷新（需要 Three.js + Rapier CDN）';
+      console.error(err);
+    }
+  </script>
+  <script src="main.js"></script>
+</body>
+</html>

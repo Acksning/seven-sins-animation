@@ -1,0 +1,192 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --chart-size: min(94vw, 440px);
+  --purple-300: #d8b4fe;
+  --purple-400: #c084fc;
+  --purple-500: #a855f7;
+  --purple-900: #0c0614;
+  --text-dim: rgba(216, 180, 254, 0.55);
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+  font-family: "Songti SC", "Noto Serif SC", "SimSun", serif;
+  color: #e9d5ff;
+}
+
+.scene {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  max-width: 480px;
+  margin: 0 auto;
+  background:
+    radial-gradient(ellipse at 50% 48%, rgba(109, 40, 217, 0.16) 0%, transparent 52%),
+    radial-gradient(ellipse at 50% 52%, rgba(88, 40, 140, 0.12) 0%, transparent 48%),
+    radial-gradient(ellipse at 50% 60%, var(--purple-900) 0%, #000 72%);
+  overflow: hidden;
+}
+
+.scene::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 15;
+  background: radial-gradient(ellipse at 50% 42%, transparent 38%, rgba(0, 0, 0, 0.55) 100%);
+}
+
+.core-layer {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 50%;
+  z-index: 2;
+}
+
+.hourglass-layer {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: var(--chart-size);
+  height: var(--chart-size);
+  z-index: 3;
+  pointer-events: none;
+  overflow: visible;
+  transition: filter 0.45s ease;
+  filter:
+    drop-shadow(0 0 12px rgba(168, 85, 247, 0.22))
+    drop-shadow(0 0 22px rgba(124, 58, 237, 0.12));
+}
+
+.hourglass-layer.is-glowing.is-flipping {
+  filter:
+    drop-shadow(0 0 16px rgba(192, 132, 252, 0.38))
+    drop-shadow(0 0 32px rgba(168, 85, 247, 0.26))
+    drop-shadow(0 0 48px rgba(124, 58, 237, 0.14));
+}
+
+#hourglass3d {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.radar-layer {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: var(--chart-size);
+  height: var(--chart-size);
+  z-index: 2;
+  pointer-events: none;
+}
+
+#radarCanvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.flip-btn {
+  position: absolute;
+  left: 50%;
+  top: 16px;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border: 1px solid rgba(192, 132, 252, 0.32);
+  border-radius: 999px;
+  background: rgba(12, 6, 20, 0.55);
+  color: var(--purple-300);
+  font-family: inherit;
+  font-size: 13px;
+  letter-spacing: 0.14em;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: border-color 0.25s, background 0.25s, box-shadow 0.25s;
+}
+
+.flip-btn:hover:not(:disabled) {
+  background: rgba(30, 15, 50, 0.75);
+  border-color: rgba(216, 180, 254, 0.5);
+  box-shadow: 0 0 20px rgba(168, 85, 247, 0.2);
+}
+
+.flip-btn:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.flip-btn-icon {
+  display: inline-block;
+  font-size: 16px;
+  line-height: 1;
+  transition: transform 1.4s cubic-bezier(0.45, 0.05, 0.3, 1);
+}
+
+.flip-btn.is-spinning .flip-btn-icon {
+  transform: rotate(180deg);
+}
+
+.quote {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(50% + var(--chart-size) / 2 + 14px);
+  bottom: auto;
+  z-index: 20;
+  text-align: center;
+  pointer-events: none;
+}
+
+.quote p {
+  font-size: 15px;
+  line-height: 1.75;
+  letter-spacing: 0.16em;
+  color: var(--text-dim);
+}
+
+.quote p:first-child {
+  font-size: 16px;
+  color: rgba(192, 132, 252, 0.85);
+  text-shadow: 0 0 24px rgba(168, 85, 247, 0.25);
+}
+
+.boot-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 3, 10, 0.82);
+  backdrop-filter: blur(4px);
+  transition: opacity 0.5s ease;
+}
+
+.boot-overlay.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.boot-overlay p {
+  font-size: 13px;
+  letter-spacing: 0.18em;
+  color: rgba(216, 180, 254, 0.65);
+}
