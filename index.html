@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>INTP · 傲慢与怠惰</title>
+  <title>INTP 七宗罪沙漏 · 傲慢与怠惰</title>
   <link rel="stylesheet" href="style.css" />
   <script type="importmap">
   {
@@ -32,10 +32,61 @@
       <span class="flip-btn-text">翻转</span>
     </button>
 
-    <footer class="quote">
-      <p>傲慢抬高怠惰的阈值</p>
-      <p>怠惰滋养傲慢的幻觉</p>
-    </footer>
+    <div class="quote-wrap">
+      <footer class="quote">
+        <p>傲慢抬高怠惰的阈值</p>
+        <p>怠惰滋养傲慢的幻觉</p>
+      </footer>
+    </div>
+
+    <aside class="control-panel" id="controlPanel" aria-label="沙漏参数控制">
+      <div class="panel-section">
+        <h2 class="panel-title">砂粒</h2>
+        <label class="control-row">
+          <span class="control-label">数量</span>
+          <input type="range" id="grainsN" min="2000" max="16000" step="500" value="10000" />
+          <output class="control-value" for="grainsN" id="grainsNVal">10000</output>
+        </label>
+        <label class="control-row">
+          <span class="control-label">半径</span>
+          <input type="range" id="grainR" min="0.12" max="0.35" step="0.02" value="0.2" />
+          <output class="control-value" for="grainR" id="grainRVal">0.20</output>
+        </label>
+      </div>
+
+      <div class="panel-section panel-section--bottle">
+        <h2 class="panel-title">瓶身</h2>
+        <div class="control-grid">
+          <label class="control-row">
+            <span class="control-label">高度</span>
+            <input type="range" id="glassH" min="12" max="20" step="0.5" value="15.5" />
+            <output class="control-value" for="glassH" id="glassHVal">15.5</output>
+          </label>
+          <label class="control-row">
+            <span class="control-label">球泡</span>
+            <input type="range" id="bulbR" min="3" max="7" step="0.2" value="5" />
+            <output class="control-value" for="bulbR" id="bulbRVal">5.0</output>
+          </label>
+          <label class="control-row">
+            <span class="control-label">颈部</span>
+            <input type="range" id="neckR" min="0.3" max="1.2" step="0.05" value="0.6" />
+            <output class="control-value" for="neckR" id="neckRVal">0.60</output>
+          </label>
+          <label class="control-row">
+            <span class="control-label">收口</span>
+            <input type="range" id="capR" min="2" max="5.5" step="0.2" value="4" />
+            <output class="control-value" for="capR" id="capRVal">4.0</output>
+          </label>
+          <label class="control-row">
+            <span class="control-label">腰线</span>
+            <input type="range" id="waistRatio" min="0.7" max="0.95" step="0.01" value="0.9" />
+            <output class="control-value" for="waistRatio" id="waistRatioVal">0.90</output>
+          </label>
+        </div>
+      </div>
+
+      <button type="button" class="apply-btn" id="applyConfigBtn">应用</button>
+    </aside>
 
     <div class="boot-overlay" id="bootOverlay">
       <p>唤醒物理引擎…</p>
@@ -43,8 +94,8 @@
   </main>
 
   <script type="module">
-    import { initHourglass, getState, flipHourglass, canFlip } from './hourglass3d.js';
-    window.Hourglass3D = { getState, flipHourglass, canFlip };
+    import { initHourglass, getState, flipHourglass, canFlip, getConfig, applyConfig } from './hourglass3d.js';
+    window.Hourglass3D = { getState, flipHourglass, canFlip, getConfig, applyConfig };
 
     const flipBtn = document.getElementById('flipBtn');
     flipBtn.addEventListener('click', () => {
@@ -63,12 +114,54 @@
       }
     }
     setInterval(syncFlipBtn, 120);
+
+    const sliders = {
+      grainsN: { el: document.getElementById('grainsN'), val: document.getElementById('grainsNVal'), fmt: (v) => String(Math.round(v)) },
+      grainR: { el: document.getElementById('grainR'), val: document.getElementById('grainRVal'), fmt: (v) => Number(v).toFixed(2) },
+      glassH: { el: document.getElementById('glassH'), val: document.getElementById('glassHVal'), fmt: (v) => Number(v).toFixed(1) },
+      bulbR: { el: document.getElementById('bulbR'), val: document.getElementById('bulbRVal'), fmt: (v) => Number(v).toFixed(1) },
+      neckR: { el: document.getElementById('neckR'), val: document.getElementById('neckRVal'), fmt: (v) => Number(v).toFixed(2) },
+      capR: { el: document.getElementById('capR'), val: document.getElementById('capRVal'), fmt: (v) => Number(v).toFixed(1) },
+      waistRatio: { el: document.getElementById('waistRatio'), val: document.getElementById('waistRatioVal'), fmt: (v) => Number(v).toFixed(2) },
+    };
+
+    function syncSlidersFromConfig(cfg) {
+      for (const [key, { el, val, fmt }] of Object.entries(sliders)) {
+        el.value = cfg[key];
+        val.textContent = fmt(cfg[key]);
+      }
+    }
+
+    for (const { el, val, fmt } of Object.values(sliders)) {
+      el.addEventListener('input', () => { val.textContent = fmt(el.value); });
+    }
+
+    const applyBtn = document.getElementById('applyConfigBtn');
+    applyBtn.addEventListener('click', async () => {
+      if (!window.Hourglass3D?.applyConfig) return;
+      applyBtn.disabled = true;
+      applyBtn.textContent = '重建中…';
+      try {
+        const partial = {};
+        for (const [key, { el }] of Object.entries(sliders)) {
+          partial[key] = Number(el.value);
+        }
+        await applyConfig(partial);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        applyBtn.disabled = false;
+        applyBtn.textContent = '应用';
+      }
+    });
+
     const overlay = document.getElementById('bootOverlay');
     try {
       await initHourglass(
         document.getElementById('hourglass3d'),
         document.getElementById('coreLayer'),
       );
+      syncSlidersFromConfig(getConfig());
       overlay.classList.add('hidden');
       window.dispatchEvent(new Event('hourglass-ready'));
     } catch (err) {
