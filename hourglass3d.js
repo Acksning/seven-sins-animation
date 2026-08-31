@@ -8,23 +8,19 @@ import * as RAPIER_NS from '@dimforge/rapier3d-simd-compat';
 
 const RAPIER = RAPIER_NS.default ?? RAPIER_NS;
 
-/* ── 玻璃轮廓（Lathe 旋转体 + 物理碰撞墙共用同一 profileR）
- *    改形状：主要调 BULB_R / NECK_R / CAP_R / H / WAIST_Y
- *    · 整体更「细瘦」→ 减小 BULB_R、CAP_R
- *    · 颈部更细      → 减小 NECK_R（漏沙会变慢、易堵）
- *    · 更高/更矮     → 改 H
- *    · 腰线上下比例  → 改 WAIST_Y（默认 0.62*H） ── */
-const G = 75;              // 重力强度；翻转时按角度分解到 x/y
-const H = 15.5;            // 玻璃半高（中心到顶/底），越大沙漏越高
-const BULB_R = 5;          // 球泡最宽处内径；减小→上下室更窄
-const NECK_R = 0.6;        // 颈部最窄处内径；减小→颈更细、流更慢
-const CAP_R = 4;           // 球泡与顶/底收口处内径；减小→整体更修长
-const WAIST_Y = 0.9 * H;  // 腰线高度：控制细颈到球泡的过渡位置
-const THROAT_H = 0.2;      // 颈部区域半高（漏沙通道的竖直范围）
+/* ── 可调参数（操作面板绑定） ── */
+const config = {
+  grainsN: 10000,
+  grainR: 0.2,
+  glassH: 15.5,
+  bulbR: 5,
+  neckR: 0.6,
+  capR: 4,
+  waistRatio: 0.9,
+};
 
-/* ── 沙粒（最常改的三项） ── */
-const GRAINS_N = 10000;     // 沙粒总数（上室+下室）；越多越密、越耗性能
-const GRAIN_R = 0.2;       // 单粒半径：同时控制 3D 显示大小与 Rapier 碰撞球
+const G = 75;
+const THROAT_H = 0.2;
 const GRAIN_COLOR = 0xc084fc;       // --purple-400，3D 下比文字色更饱和才不发灰
 const GRAIN_COLOR_PRIDE = 0xd8b4fe; // 傲慢室：偏暖
 const GRAIN_COLOR_SLOTH = 0xc084fc; // 怠惰室：略冷
@@ -61,28 +57,32 @@ const FLIP_MS = 1400;            // 翻转动画时长（rig 旋转 + 重力同�
 const FLIP_SETTLE_MS = 700;      // 翻转后等待沙堆稳定的时长
 const PAUSE_BEFORE_FLIP_MS = 500; // 上室漏空后、自动翻转前的停驻
 
-function profileR(u) {
-  const smooth = (t) => t * t * (3 - 2 * t);
-  if (u <= WAIST_Y) return NECK_R + (BULB_R - NECK_R) * smooth(u / WAIST_Y);
-  const t = Math.min(1, (u - WAIST_Y) / (H - WAIST_Y));
-  return BULB_R + (CAP_R - BULB_R) * smooth(t);
-}
+function waistY() { return config.waistRatio * config.glassH; }
 
-/* ── 由 GRAIN_R / NECK_R 推导的颈部几何（一般随 GRAIN_R 自动生效） ── */
-const Y_HOLD = THROAT_H + GRAIN_R * 1.4;   // 低于此线的未释放沙粒会被冻结（plug）
-const HOLD_R2 = (NECK_R * 1.9) ** 2;       // 颈部柱形冻结区的水平半径²
-const FEED_Y = THROAT_H + GRAIN_R * 9;     // 唤醒上方喂料区的纵向范围
-const FEED_R2 = (NECK_R * 2.2) ** 2;       // 喂料区中心柱半径²
+function yHold() { return THROAT_H + config.grainR * 1.4; }
+function holdR2() { return (config.neckR * 1.9) ** 2; }
+function feedY() { return THROAT_H + config.grainR * 9; }
+function feedR2() { return (config.neckR * 2.2) ** 2; }
+
+function profileR(u) {
+  const H = config.glassH;
+  const { bulbR, neckR, capR } = config;
+  const WY = waistY();
+  const smooth = (t) => t * t * (3 - 2 * t);
+  if (u <= WY) return neckR + (bulbR - neckR) * smooth(u / WY);
+  const t = Math.min(1, (u - WY) / (H - WY));
+  return bulbR + (capR - bulbR) * smooth(t);
+}
 
 let canvas, renderer, scene, camera, rig, glassShellMat, glassInnerShellMat, glassHaloMat, grainMesh, coreLayer, hourglassLayer;
 let world, bodies = [];
 let N = 0;
 
-const posCache = new Float32Array(GRAINS_N * 3);
-const frozen = new Uint8Array(GRAINS_N);
-const released = new Uint8Array(GRAINS_N);
-const grainType = new Uint8Array(GRAINS_N); // 0=傲慢 1=怠惰
-const slowFrames = new Uint8Array(GRAINS_N);
+let posCache = new Float32Array(0);
+let frozen = new Uint8Array(0);
+let released = new Uint8Array(0);
+let grainType = new Uint8Array(0);
+let slowFrames = new Uint8Array(0);
 let frozenList = [];
 
 const _m = new THREE.Matrix4();
@@ -144,21 +144,21 @@ function freezePass() {
   for (let i = 0; i < N; i++) {
     if (frozen[i] || released[i]) continue;
     const yo = posCache[i * 3 + 1] * orientation;
-    if (yo > Y_HOLD) continue;
+    if (yo > yHold()) continue;
     const x = posCache[i * 3];
     const z = posCache[i * 3 + 2];
-    if (x * x + z * z < HOLD_R2) freeze(i);
+    if (x * x + z * z < holdR2()) freeze(i);
   }
 }
 
 function dropThroughNeck(i, burstIdx) {
   const band = burstIdx % BANDS;
   const a = Math.random() * Math.PI * 2;
-  const rr = Math.random() * NECK_R * 0.4;
+  const rr = Math.random() * config.neckR * 0.4;
   if (frozen[i]) unfreeze(i, true);
   bodies[i].setTranslation({
     x: Math.cos(a) * rr,
-    y: -(THROAT_H + GRAIN_R * 1.6 + band * GRAIN_R * 2.2) * orientation,
+    y: -(THROAT_H + config.grainR * 1.6 + band * config.grainR * 2.2) * orientation,
     z: Math.sin(a) * rr,
   }, true);
   bodies[i].setLinvel({
@@ -178,7 +178,7 @@ function wakeFeedZone() {
     if (yo < 0) continue;
     const x = posCache[i * 3];
     const z = posCache[i * 3 + 2];
-    if (yo < FEED_Y || x * x + z * z < FEED_R2) bodies[i].wakeUp();
+    if (yo < feedY() || x * x + z * z < feedR2()) bodies[i].wakeUp();
   }
 }
 
@@ -213,6 +213,7 @@ function meter(now, complete = false) {
 function postStep(force = false) {
   let dirty = false;
   const maxSq = V_MAX * V_MAX;
+  const H = config.glassH;
   for (let i = 0; i < N; i++) {
     const b = bodies[i];
     if (!force && (frozen[i] || b.isSleeping())) continue;
@@ -234,7 +235,7 @@ function postStep(force = false) {
         slowFrames[i] = 0;
       }
       const rxz = Math.hypot(t.x, t.z);
-      if (rxz > profileR(Math.min(Math.abs(t.y), H)) + GRAIN_R * 2 || Math.abs(t.y) > H + 1.5) {
+      if (rxz > profileR(Math.min(Math.abs(t.y), H)) + config.grainR * 2 || Math.abs(t.y) > H + 1.5) {
         const yc = THREE.MathUtils.clamp(t.y, -H + 1, H - 1);
         const rSafe = Math.max(0.1, profileR(Math.abs(yc)) * 0.5);
         const sc = rxz > 1e-4 ? rSafe / rxz : 0;
@@ -279,7 +280,7 @@ function setCoreRotation(thetaRad) {
 }
 
 function updatePublicState() {
-  const half = GRAINS_N / 2;
+  const half = config.grainsN / 2;
   let upperPride = 0;
   let lowerSloth = 0;
   for (let i = 0; i < N; i++) {
@@ -301,6 +302,7 @@ function updatePublicState() {
 }
 
 function buildStaticColliders() {
+  const H = config.glassH;
   const fixed = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
   const WBANDS = 30;
   const SEGS = 26;
@@ -345,7 +347,7 @@ function buildStaticColliders() {
   }
   for (const s of [-1, 1]) {
     world.createCollider(
-      RAPIER.ColliderDesc.cylinder(0.5, CAP_R + 1.2)
+      RAPIER.ColliderDesc.cylinder(0.5, config.capR + 1.2)
         .setTranslation(0, s * (H + 0.48), 0)
         .setFriction(0.55).setCollisionGroups(0xffffffff),
       fixed,
@@ -354,13 +356,14 @@ function buildStaticColliders() {
 }
 
 function seedPositions(count, chamber) {
+  const H = config.glassH;
   const out = [];
-  const jit = () => (Math.random() - 0.5) * GRAIN_R * 0.6;
-  const spacing = GRAIN_R * 1.96;
-  const yMin = chamber === 'top' ? THROAT_H + GRAIN_R : -H + 1.2;
-  const yMax = chamber === 'top' ? H - 1.2 : -THROAT_H - GRAIN_R;
-  for (let y = yMin; y < yMax && out.length < count; y += GRAIN_R * 1.75) {
-    const rMax = profileR(Math.abs(y)) - GRAIN_R - 0.15;
+  const jit = () => (Math.random() - 0.5) * config.grainR * 0.6;
+  const spacing = config.grainR * 1.96;
+  const yMin = chamber === 'top' ? THROAT_H + config.grainR : -H + 1.2;
+  const yMax = chamber === 'top' ? H - 1.2 : -THROAT_H - config.grainR;
+  for (let y = yMin; y < yMax && out.length < count; y += config.grainR * 1.75) {
+    const rMax = profileR(Math.abs(y)) - config.grainR - 0.15;
     if (rMax <= 0) continue;
     out.push([jit() * 0.4, y, jit() * 0.4]);
     const a0 = y * 3.7;
@@ -377,7 +380,7 @@ function seedPositions(count, chamber) {
 
 function applyGrainColors() {
   if (!grainMesh.instanceColor) {
-    grainMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(GRAINS_N * 3), 3);
+    grainMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(config.grainsN * 3), 3);
   }
   const prideBase = new THREE.Color(GRAIN_COLOR_PRIDE);
   const slothBase = new THREE.Color(GRAIN_COLOR_SLOTH);
@@ -399,22 +402,22 @@ function applyGrainColors() {
 
 function buildSand() {
   bodies = [];
-  const topPts = seedPositions(GRAINS_N / 2, 'top');
-  const botPts = seedPositions(GRAINS_N / 2, 'bottom');
+  const topPts = seedPositions(config.grainsN / 2, 'top');
+  const botPts = seedPositions(config.grainsN / 2, 'bottom');
   const pts = [...topPts, ...botPts];
   N = pts.length;
 
   for (let i = 0; i < N; i++) {
     const [x, y, z] = pts[i];
-    grainType[i] = i < GRAINS_N / 2 ? 0 : 1;
-    released[i] = i >= GRAINS_N / 2 ? 1 : 0;
+    grainType[i] = i < config.grainsN / 2 ? 0 : 1;
+    released[i] = i >= config.grainsN / 2 ? 1 : 0;
     const body = world.createRigidBody(
       RAPIER.RigidBodyDesc.dynamic().setTranslation(x, y, z)
         .setLinearDamping(0.3).setAngularDamping(0.8)
-        .setSoftCcdPrediction(GRAIN_R * 4),
+        .setSoftCcdPrediction(config.grainR * 4),
     );
     world.createCollider(
-      RAPIER.ColliderDesc.ball(GRAIN_R)
+      RAPIER.ColliderDesc.ball(config.grainR)
         .setFriction(0.55).setRestitution(0).setDensity(1.4),
       body,
     );
@@ -523,28 +526,40 @@ const GLASS_HALO_FRAG = /* glsl */`
   }
 `;
 
-function buildScene() {
-  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.setClearColor(0x000000, 0);
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 0.96;
+function allocBuffers() {
+  const n = config.grainsN;
+  posCache = new Float32Array(n * 3);
+  frozen = new Uint8Array(n);
+  released = new Uint8Array(n);
+  grainType = new Uint8Array(n);
+  slowFrames = new Uint8Array(n);
+  frozenList = [];
+}
 
-  scene = new THREE.Scene();
-  scene.add(new THREE.HemisphereLight(0xe9d5ff, 0x5b21b6, 0.55));
+function disposeRigMeshes() {
+  if (!rig) return;
+  while (rig.children.length) {
+    const child = rig.children[0];
+    child.geometry?.dispose();
+    if (child.material) {
+      if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose());
+      else if (child.material !== glassShellMat
+        && child.material !== glassInnerShellMat
+        && child.material !== glassHaloMat) child.material.dispose();
+    }
+    rig.remove(child);
+  }
+  glassShellMat?.dispose();
+  glassInnerShellMat?.dispose();
+  glassHaloMat?.dispose();
+  grainMesh = null;
+  glassShellMat = null;
+  glassInnerShellMat = null;
+  glassHaloMat = null;
+}
 
-  camera = new THREE.PerspectiveCamera(34, 1, 0.5, 500);
-
-  const keyLight = new THREE.DirectionalLight(0xe9d5ff, 1.0);
-  keyLight.position.set(18, 28, 22);
-  scene.add(keyLight);
-  const rimLight = new THREE.DirectionalLight(0xc084fc, 0.45);
-  rimLight.position.set(-12, 8, -18);
-  scene.add(rimLight);
-
-  rig = new THREE.Group();
-  scene.add(rig);
-
+function buildGlassAndGrains() {
+  const H = config.glassH;
   const lathePts = [new THREE.Vector2(0.15, -H)];
   for (let i = 0; i <= 72; i++) {
     const y = -H + (2 * H * i) / 72;
@@ -614,7 +629,7 @@ function buildScene() {
   glassHalo.renderOrder = 3;
   rig.add(glassHalo);
 
-  const grainGeo = new THREE.IcosahedronGeometry(GRAIN_R, 1);
+  const grainGeo = new THREE.IcosahedronGeometry(config.grainR, 1);
   const grainEmissive = new THREE.Color(GRAIN_EMISSIVE).multiplyScalar(GRAIN_EMISSIVE_STRENGTH);
   const grainMat = new THREE.MeshLambertMaterial({
     color: GRAIN_COLOR,
@@ -623,17 +638,68 @@ function buildScene() {
     emissive: grainEmissive,
     emissiveIntensity: GRAIN_EMISSIVE_INTENSITY,
   });
-  grainMesh = new THREE.InstancedMesh(grainGeo, grainMat, GRAINS_N);
-  grainMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(GRAINS_N * 3), 3);
+  grainMesh = new THREE.InstancedMesh(grainGeo, grainMat, config.grainsN);
+  grainMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(config.grainsN * 3), 3);
   grainMesh.renderOrder = 1;
   grainMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   grainMesh.frustumCulled = false;
   rig.add(grainMesh);
 }
 
+function rebuildSimulation() {
+  state = 'boot';
+  ready = false;
+  flipPhase = null;
+  settle = null;
+  releasedCount = 0;
+  elapsedMs = 0;
+  autoFlipAt = 0;
+  acc = 0;
+  N = 0;
+  bodies = [];
+
+  allocBuffers();
+  disposeRigMeshes();
+  buildGlassAndGrains();
+  resize();
+
+  world = new RAPIER.World({ x: 0, y: -G * orientation, z: 0 });
+  world.timestep = DT;
+  setGravity(0, -G * orientation);
+  buildStaticColliders();
+  buildSand();
+  applyGrainColors();
+  postStep(true);
+  beginSettle();
+}
+
+function buildScene() {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setClearColor(0x000000, 0);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 0.96;
+
+  scene = new THREE.Scene();
+  scene.add(new THREE.HemisphereLight(0xe9d5ff, 0x5b21b6, 0.55));
+
+  camera = new THREE.PerspectiveCamera(34, 1, 0.5, 500);
+
+  const keyLight = new THREE.DirectionalLight(0xe9d5ff, 1.0);
+  keyLight.position.set(18, 28, 22);
+  scene.add(keyLight);
+  const rimLight = new THREE.DirectionalLight(0xc084fc, 0.45);
+  rimLight.position.set(-12, 8, -18);
+  scene.add(rimLight);
+
+  rig = new THREE.Group();
+  scene.add(rig);
+  buildGlassAndGrains();
+}
+
 function fitCamera(w, h) {
-  const halfH = H + 0.35;
-  const halfW = BULB_R + 1.4;
+  const halfH = config.glassH + 0.35;
+  const halfW = config.bulbR + 1.4;
   const targetDiameterRatio = HEPTAGON_RADIUS_RATIO * 2 * HOURGLASS_VIEW_SCALE;
   const fovRad = (camera.fov * Math.PI) / 180;
   const tanHalfFov = Math.tan(fovRad / 2);
@@ -686,7 +752,7 @@ function enterReady(autoRun = false) {
   releasedCount = 0;
   elapsedMs = 0;
   topStart = countUpperUnreleased();
-  effDuration = Math.max(8, BASE_DRAIN_SEC * (topStart / Math.max(1, GRAINS_N / 2)));
+  effDuration = Math.max(8, BASE_DRAIN_SEC * (topStart / Math.max(1, config.grainsN / 2)));
   postStep(true);
   freezePass();
   ready = true;
@@ -696,7 +762,7 @@ function enterReady(autoRun = false) {
 function beginRun() {
   topStart = countUpperUnreleased();
   if (topStart <= 0) return;
-  effDuration = Math.max(8, BASE_DRAIN_SEC * (topStart / Math.max(1, GRAINS_N / 2)));
+  effDuration = Math.max(8, BASE_DRAIN_SEC * (topStart / Math.max(1, config.grainsN / 2)));
   startStamp = performance.now();
   releasedCount = 0;
   autoFlipAt = 0;
@@ -753,7 +819,7 @@ function flipTick(now) {
       state = 'ready';
       return;
     }
-    effDuration = Math.max(8, BASE_DRAIN_SEC * (topStart / Math.max(1, GRAINS_N / 2)));
+    effDuration = Math.max(8, BASE_DRAIN_SEC * (topStart / Math.max(1, config.grainsN / 2)));
     beginRun();
   }
 }
@@ -828,11 +894,22 @@ export function flipHourglass() {
   return true;
 }
 
+export function getConfig() {
+  return { ...config };
+}
+
+export async function applyConfig(partial) {
+  Object.assign(config, partial);
+  rebuildSimulation();
+  return publicState;
+}
+
 export async function initHourglass(el, coreEl) {
   canvas = el;
   coreLayer = coreEl ?? document.getElementById('coreLayer');
   hourglassLayer = document.getElementById('hourglassLayer');
   hourglassLayer?.classList.add('is-glowing');
+  allocBuffers();
   buildScene();
   resize();
   setCoreRotation(thetaBase);

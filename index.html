@@ -17,29 +17,48 @@
 </head>
 <body>
   <main class="scene">
-    <div class="core-layer" id="coreLayer">
-      <section class="radar-layer">
-        <canvas id="radarCanvas"></canvas>
-      </section>
+    <div class="stage">
+      <div class="stage-section stage-section--flip">
+        <button type="button" class="flip-btn" id="flipBtn" aria-label="翻转沙漏">
+          <span class="flip-btn-icon" aria-hidden="true">↻</span>
+          <span class="flip-btn-text">翻转</span>
+        </button>
+      </div>
 
-      <section class="hourglass-layer" id="hourglassLayer">
-        <canvas id="hourglass3d"></canvas>
-      </section>
+      <div class="stage-section stage-section--viz">
+        <div class="core-layer" id="coreLayer">
+          <section class="radar-layer">
+            <canvas id="radarCanvas"></canvas>
+          </section>
+
+          <section class="hourglass-layer" id="hourglassLayer">
+            <canvas id="hourglass3d"></canvas>
+          </section>
+        </div>
+      </div>
+
+      <div class="stage-section stage-section--quote">
+        <footer class="quote">
+          <p>傲慢抬高怠惰的阈值</p>
+          <p>怠惰滋养傲慢的幻觉</p>
+        </footer>
+      </div>
     </div>
 
-    <button type="button" class="flip-btn" id="flipBtn" aria-label="翻转沙漏">
-      <span class="flip-btn-icon" aria-hidden="true">↻</span>
-      <span class="flip-btn-text">翻转</span>
+    <button
+      type="button"
+      class="panel-toggle"
+      id="panelToggle"
+      aria-label="打开参数面板"
+      aria-expanded="false"
+      aria-controls="controlPanel"
+    >
+      调节
     </button>
 
-    <div class="quote-wrap">
-      <footer class="quote">
-        <p>傲慢抬高怠惰的阈值</p>
-        <p>怠惰滋养傲慢的幻觉</p>
-      </footer>
-    </div>
+    <div class="panel-backdrop" id="panelBackdrop" aria-hidden="true"></div>
 
-    <aside class="control-panel" id="controlPanel" aria-label="沙漏参数控制">
+    <aside class="control-panel" id="controlPanel" aria-label="沙漏参数控制" aria-hidden="true">
       <div class="panel-section">
         <h2 class="panel-title">砂粒</h2>
         <label class="control-row">
@@ -153,6 +172,27 @@
         applyBtn.disabled = false;
         applyBtn.textContent = '应用';
       }
+    });
+
+    const panelToggle = document.getElementById('panelToggle');
+    const controlPanel = document.getElementById('controlPanel');
+    const panelBackdrop = document.getElementById('panelBackdrop');
+
+    function setPanelOpen(open) {
+      controlPanel.classList.toggle('is-open', open);
+      panelBackdrop.classList.toggle('is-visible', open);
+      panelToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      panelToggle.setAttribute('aria-label', open ? '关闭参数面板' : '打开参数面板');
+      controlPanel.setAttribute('aria-hidden', open ? 'false' : 'true');
+      panelBackdrop.setAttribute('aria-hidden', open ? 'false' : 'true');
+    }
+
+    panelToggle.addEventListener('click', () => {
+      setPanelOpen(!controlPanel.classList.contains('is-open'));
+    });
+    panelBackdrop.addEventListener('click', () => setPanelOpen(false));
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') setPanelOpen(false);
     });
 
     const overlay = document.getElementById('bootOverlay');
